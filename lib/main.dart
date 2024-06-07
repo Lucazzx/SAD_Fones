@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:csv/csv.dart';
@@ -64,7 +65,7 @@ class _PreferencePageState extends State<PreferencePage> {
             RangeSlider(
               values: RangeValues(_minPrice, _maxPrice),
               min: 0,
-              max: 5000,
+              max: 1000,
               divisions: 100,
               labels: RangeLabels(
                 _minPrice.toString(),
@@ -170,7 +171,7 @@ class _ResultPageState extends State<ResultPage> {
       List<List<dynamic>> listData = CsvToListConverter().convert(rawData);
       setState(() {
         _fones = listData;
-        _filterFones();
+        _applyClustering();
       });
     } catch (e) {
       print("Error loading CSV: $e");
@@ -180,9 +181,35 @@ class _ResultPageState extends State<ResultPage> {
     }
   }
 
-  void _filterFones() {
-    List<List<dynamic>> filtered = _fones.where((fone) {
-      if (fone[0] == 'modelo') return false; // Skip header
+  void _applyClustering() {
+    List<List<double>> dataPoints = _fones.skip(1).map((fone) {
+      return [
+        double.tryParse(fone[2].toString()) ?? 0, // preço_medio_reais
+        double.tryParse(fone[3].toString()) ?? 0, // nota_global
+        double.tryParse(fone[4].toString()) ?? 0, // som
+        double.tryParse(fone[5].toString()) ?? 0, // anc
+        double.tryParse(fone[6].toString()) ?? 0, // autonomia_horas
+      ];
+    }).toList();
+
+    var kmeans = KMeans(numClusters: 3);
+    var result = kmeans.fit(dataPoints);
+
+    var clusteredFones = <int, List<List<dynamic>>>{};
+    for (int i = 0; i < result.clusterIndices.length; i++) {
+      var cluster = result.clusterIndices[i];
+      if (!clusteredFones.containsKey(cluster)) {
+        clusteredFones[cluster] = [];
+      }
+      clusteredFones[cluster]!.add(_fones[i + 1]); // Skip header row
+    }
+
+    // Use the largest cluster for recommendation
+    var largestCluster =
+        clusteredFones.values.reduce((a, b) => a.length > b.length ? a : b);
+
+    // Filter largest cluster based on user preferences
+    List<List<dynamic>> filtered = largestCluster.where((fone) {
       double price = double.tryParse(fone[2].toString()) ?? 0;
       String type = fone[1].toString();
       double micQuality = double.tryParse(fone[8].toString()) ?? 0; // microfone
@@ -195,11 +222,13 @@ class _ResultPageState extends State<ResultPage> {
           (!widget.isForGaming || hasGameMode == 'Sim') &&
           (!widget.isForPhysicalActivity || resistance != 'N/A');
     }).toList();
+
     filtered.sort((a, b) {
       double ratingA = double.tryParse(a[3].toString()) ?? 0;
       double ratingB = double.tryParse(b[3].toString()) ?? 0;
       return ratingB.compareTo(ratingA); // Sort by rating descending
     });
+
     setState(() {
       _filteredFones = filtered.take(5).toList(); // Top 5
       _isLoading = false;
@@ -262,4 +291,90 @@ class _ResultPageState extends State<ResultPage> {
       throw 'Could not launch $url';
     }
   }
+}
+
+class KMeans {
+  final int numClusters;
+  final int maxIterations;
+
+  KMeans({required this.numClusters, this.maxIterations = 100});
+
+  _KMeansResult fit(List<List<double>> data) {
+    Random random = Random();
+    List<List<double>> centroids =
+        List.generate(numClusters, (_) => data[random.nextInt(data.length)]);
+    List<int> labels = List.filled(data.length, -1);
+
+    for (int iteration = 0; iteration < maxIterations; iteration++) {
+      // Assign labels based on closest centroid
+      for (int i = 0; i < data.length; i++) {
+        labels[i] = _closestCentroid(data[i], centroids);
+      }
+
+      // Calculate new centroids
+      List<List<double>> newCentroids =
+          List.generate(numClusters, (_) => List.filled(data[0].length, 0));
+      List<int> counts = List.filled(numClusters, 0);
+
+      for (int i = 0; i < data.length; i++) {
+        int label = labels[i];
+        for (int j = 0; j < data[i].length; j++) {
+          newCentroids[label][j] += data[i][j];
+        }
+        counts[label]++;
+      }
+
+      for (int i = 0; i < numClusters; i++) {
+        for (int j = 0; j < newCentroids[i].length; j++) {
+          newCentroids[i][j] /= counts[i];
+        }
+      }
+
+      if (_converged(centroids, newCentroids)) {
+        break;
+      }
+
+      centroids = newCentroids;
+    }
+
+    return _KMeansResult(centroids: centroids, clusterIndices: labels);
+  }
+
+  int _closestCentroid(List<double> point, List<List<double>> centroids) {
+    double minDistance = double.infinity;
+    int minIndex = -1;
+    for (int i = 0; i < centroids.length; i++) {
+      double distance = _euclideanDistance(point, centroids[i]);
+      if (distance < minDistance) {
+        minDistance = distance;
+        minIndex = i;
+      }
+    }
+    return minIndex;
+  }
+
+  double _euclideanDistance(List<double> a, List<double> b) {
+    double sum = 0;
+    for (int i = 0; i < a.length; i++) {
+      sum += pow(a[i] - b[i], 2);
+    }
+    return sqrt(sum);
+  }
+
+  bool _converged(
+      List<List<double>> centroids, List<List<double>> newCentroids) {
+    for (int i = 0; i < centroids.length; i++) {
+      if (_euclideanDistance(centroids[i], newCentroids[i]) > 0.001) {
+        return false;
+      }
+    }
+    return true;
+  }
+}
+
+class _KMeansResult {
+  final List<List<double>> centroids;
+  final List<int> clusterIndices;
+
+  _KMeansResult({required this.centroids, required this.clusterIndices});
 }
