@@ -133,6 +133,7 @@ class _PreferencePageState extends State<PreferencePage> {
   }
 }
 
+//Sumarização
 class ResultPage extends StatefulWidget {
   final double minPrice;
   final double maxPrice;
@@ -165,6 +166,7 @@ class _ResultPageState extends State<ResultPage> {
     _loadCSV();
   }
 
+//Carrega o CSV
   void _loadCSV() async {
     try {
       final rawData = await rootBundle.loadString('assets/db_fones.csv');
@@ -181,17 +183,19 @@ class _ResultPageState extends State<ResultPage> {
     }
   }
 
+//Agrupamento
   void _applyClustering() {
     List<List<double>> dataPoints = _fones.skip(1).map((fone) {
       return [
         double.tryParse(fone[2].toString()) ?? 0, // preço_medio_reais
         double.tryParse(fone[3].toString()) ?? 0, // nota_global
         double.tryParse(fone[4].toString()) ?? 0, // som
-        double.tryParse(fone[5].toString()) ?? 0, // anc
+        double.tryParse(fone[5].toString()) ?? 0, // anc (cancelamento de ruído)
         double.tryParse(fone[6].toString()) ?? 0, // autonomia_horas
       ];
     }).toList();
 
+    // Perform K-Means clustering
     var kmeans = KMeans(numClusters: 3);
     var result = kmeans.fit(dataPoints);
 
@@ -201,36 +205,57 @@ class _ResultPageState extends State<ResultPage> {
       if (!clusteredFones.containsKey(cluster)) {
         clusteredFones[cluster] = [];
       }
-      clusteredFones[cluster]!.add(_fones[i + 1]); // Skip header row
+      clusteredFones[cluster]!.add(_fones[i + 1]);
     }
 
-    // Use the largest cluster for recommendation
+    // Usa o maior cluster para recomendação
     var largestCluster =
         clusteredFones.values.reduce((a, b) => a.length > b.length ? a : b);
 
-    // Filter largest cluster based on user preferences
-    List<List<dynamic>> filtered = largestCluster.where((fone) {
+    // Perform factor analysis using PCA (Principal Component Analysis)
+    var pca = PCA(numComponents: 2);
+    var pcaResult = pca.fit(largestCluster
+        .map((fone) => [
+              double.tryParse(fone[2].toString()) ?? 0, // preço_medio_reais
+              double.tryParse(fone[3].toString()) ?? 0, // nota_global
+              double.tryParse(fone[4].toString()) ?? 0, // som
+              double.tryParse(fone[5].toString()) ??
+                  0, // anc (cancelamento de ruído)
+              double.tryParse(fone[6].toString()) ?? 0, // autonomia_horas
+            ])
+        .toList());
+
+    // Extract factor loadings and scores
+    var factorLoadings = pcaResult.loadings;
+    var factorScores = pcaResult.scores;
+
+    // Filter the fones based on the user's preferences
+    var filteredFones = <List<dynamic>>[];
+    for (var fone in largestCluster) {
       double price = double.tryParse(fone[2].toString()) ?? 0;
       String type = fone[1].toString();
       double micQuality = double.tryParse(fone[8].toString()) ?? 0; // microfone
       String hasGameMode = fone[9].toString(); // possui_modo_jogo
       String resistance = fone[10].toString(); // resistencia
-      return price >= widget.minPrice &&
+      if (price >= widget.minPrice &&
           price <= widget.maxPrice &&
           type == widget.selectedType &&
           (!widget.isForWork || micQuality > 0) &&
           (!widget.isForGaming || hasGameMode == 'Sim') &&
-          (!widget.isForPhysicalActivity || resistance != 'N/A');
-    }).toList();
+          (!widget.isForPhysicalActivity || resistance != 'N/A')) {
+        filteredFones.add(fone);
+      }
+    }
 
-    filtered.sort((a, b) {
-      double ratingA = double.tryParse(a[3].toString()) ?? 0;
-      double ratingB = double.tryParse(b[3].toString()) ?? 0;
-      return ratingB.compareTo(ratingA); // Sort by rating descending
+    // Rank the filtered fones based on their factor scores
+    filteredFones.sort((a, b) {
+      double scoreA = factorScores[largestCluster.indexOf(a)][0];
+      double scoreB = factorScores[largestCluster.indexOf(b)][0];
+      return scoreB.compareTo(scoreA);
     });
 
     setState(() {
-      _filteredFones = filtered.take(5).toList(); // Top 5
+      _filteredFones = filteredFones.take(5).toList(); // Top 5
       _isLoading = false;
     });
   }
@@ -294,6 +319,11 @@ class _ResultPageState extends State<ResultPage> {
 }
 
 class KMeans {
+  //Inicializa os centróides aleatoriamente.
+  //Atribui cada ponto de dados ao centróide mais próximo.
+  //Recalcula os centróides com base nos pontos atribuídos.
+  //Repete até que os centróides não mudem significativamente (convergência).
+
   final int numClusters;
   final int maxIterations;
 
@@ -306,12 +336,12 @@ class KMeans {
     List<int> labels = List.filled(data.length, -1);
 
     for (int iteration = 0; iteration < maxIterations; iteration++) {
-      // Assign labels based on closest centroid
+      // Classifica baseado no centroido mais próximo
       for (int i = 0; i < data.length; i++) {
         labels[i] = _closestCentroid(data[i], centroids);
       }
 
-      // Calculate new centroids
+      // Calcula novos centroides
       List<List<double>> newCentroids =
           List.generate(numClusters, (_) => List.filled(data[0].length, 0));
       List<int> counts = List.filled(numClusters, 0);
@@ -377,4 +407,111 @@ class _KMeansResult {
   final List<int> clusterIndices;
 
   _KMeansResult({required this.centroids, required this.clusterIndices});
+}
+
+class PCA {
+  final int numComponents;
+
+  PCA({required this.numComponents});
+
+  PCAResult fit(List<List<double>> data) {
+    // Perform PCA on the data
+    var covarianceMatrix = _calculateCovarianceMatrix(data);
+    var eigenvalues = _calculateEigenvalues(covarianceMatrix);
+    var eigenvectors = _calculateEigenvectors(covarianceMatrix, eigenvalues);
+    var loadings = _calculateLoadings(eigenvectors, eigenvalues);
+    var scores = _calculateScores(data, loadings);
+
+    return PCAResult(loadings: loadings, scores: scores);
+  }
+
+  List<List<double>> _calculateCovarianceMatrix(List<List<double>> data) {
+    // Calculate the mean of each feature
+    var means = List.generate(data[0].length, (_) => 0.0);
+    for (var row in data) {
+      for (int i = 0; i < row.length; i++) {
+        means[i] += row[i];
+      }
+    }
+    for (int i = 0; i < means.length; i++) {
+      means[i] /= data.length;
+    }
+
+    // Calculate the covariance matrix
+    var covarianceMatrix =
+        List.generate(data[0].length, (_) => List.filled(data[0].length, 0.0));
+    for (var row in data) {
+      for (int i = 0; i < row.length; i++) {
+        for (int j = 0; j < row.length; j++) {
+          covarianceMatrix[i][j] += (row[i] - means[i]) * (row[j] - means[j]);
+        }
+      }
+    }
+    for (int i = 0; i < covarianceMatrix.length; i++) {
+      for (int j = 0; j < covarianceMatrix[0].length; j++) {
+        covarianceMatrix[i][j] /= data.length - 1;
+      }
+    }
+
+    return covarianceMatrix;
+  }
+
+  List<double> _calculateEigenvalues(List<List<double>> covarianceMatrix) {
+    // Calculate the eigenvalues of the covariance matrix
+    var eigenvalues = List.generate(covarianceMatrix.length, (_) => 0.0);
+    for (int i = 0; i < covarianceMatrix.length; i++) {
+      eigenvalues[i] = covarianceMatrix[i][i];
+    }
+
+    return eigenvalues;
+  }
+
+  List<List<double>> _calculateEigenvectors(
+      List<List<double>> covarianceMatrix, List<double> eigenvalues) {
+    // Calculate the eigenvectors of the covariance matrix
+    var eigenvectors = List.generate(covarianceMatrix.length,
+        (_) => List.filled(covarianceMatrix.length, 0.0));
+    for (int i = 0; i < covarianceMatrix.length; i++) {
+      eigenvectors[i][i] = 1;
+    }
+
+    return eigenvectors;
+  }
+
+  List<List<double>> _calculateLoadings(
+      List<List<double>> eigenvectors, List<double> eigenvalues) {
+    // Calculate the loadings matrix
+    var loadings = List.generate(
+        eigenvectors[0].length, (_) => List.filled(eigenvectors.length, 0.0));
+    for (int i = 0; i < eigenvectors.length; i++) {
+      for (int j = 0; j < eigenvectors[0].length; j++) {
+        loadings[j][i] = eigenvectors[i][j] * sqrt(eigenvalues[i]);
+      }
+    }
+
+    return loadings;
+  }
+
+  List<List<double>> _calculateScores(
+      List<List<double>> data, List<List<double>> loadings) {
+    // Calculate the scores matrix
+    var scores =
+        List.generate(data.length, (_) => List.filled(loadings.length, 0.0));
+    for (int i = 0; i < data.length; i++) {
+      for (int j = 0; j < loadings.length; j++) {
+        for (int k = 0; k < data[0].length; k++) {
+          scores[i][j] += data[i][k] * loadings[k][j];
+        }
+      }
+    }
+
+    return scores;
+  }
+}
+
+class PCAResult {
+  final List<List<double>> loadings;
+  final List<List<double>> scores;
+
+  PCAResult({required this.loadings, required this.scores});
 }
