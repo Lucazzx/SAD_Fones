@@ -157,7 +157,9 @@ class ResultPage extends StatefulWidget {
 
 class _ResultPageState extends State<ResultPage> {
   List<List<dynamic>> _fones = [];
-  List<List<dynamic>> _filteredFones = [];
+  List<List<dynamic>> _filteredFonesCustoBeneficio = [];
+  List<List> _filteredFonesBoasApostas = <List<dynamic>>[];
+  List<List<dynamic>> _filteredFonesConsolidados = [];
   bool _isLoading = true;
 
   @override
@@ -208,9 +210,16 @@ class _ResultPageState extends State<ResultPage> {
       clusteredFones[cluster]!.add(_fones[i + 1]);
     }
 
-    // Usa o maior cluster para recomendação
+    // Identify clusters
     var largestCluster =
         clusteredFones.values.reduce((a, b) => a.length > b.length ? a : b);
+    var smallestCluster =
+        clusteredFones.values.reduce((a, b) => a.length < b.length ? a : b);
+    var averageCluster = clusteredFones.values.firstWhere(
+        (cluster) =>
+            cluster.length != largestCluster.length &&
+            cluster.length != smallestCluster.length,
+        orElse: () => []);
 
     // Perform factor analysis using PCA (Principal Component Analysis)
     var pca = PCA(numComponents: 2);
@@ -230,7 +239,7 @@ class _ResultPageState extends State<ResultPage> {
     var factorScores = pcaResult.scores;
 
     // Filter the fones based on the user's preferences
-    var filteredFones = <List<dynamic>>[];
+    var filteredFonesCustoBeneficio = <List<dynamic>>[];
     for (var fone in largestCluster) {
       double price = double.tryParse(fone[2].toString()) ?? 0;
       String type = fone[1].toString();
@@ -243,21 +252,119 @@ class _ResultPageState extends State<ResultPage> {
           (!widget.isForWork || micQuality > 0) &&
           (!widget.isForGaming || hasGameMode == 'Sim') &&
           (!widget.isForPhysicalActivity || resistance != 'N/A')) {
-        filteredFones.add(fone);
+        filteredFonesCustoBeneficio.add(fone);
       }
     }
 
     // Rank the filtered fones based on their factor scores
-    filteredFones.sort((a, b) {
-      double scoreA = factorScores[largestCluster.indexOf(a)][0];
-      double scoreB = factorScores[largestCluster.indexOf(b)][0];
+    filteredFonesCustoBeneficio.sort((a, b) {
+      double scoreA =
+          factorScores[largestCluster.indexOf(a)].reduce((a, b) => a + b);
+      double scoreB =
+          factorScores[largestCluster.indexOf(b)].reduce((a, b) => a + b);
       return scoreB.compareTo(scoreA);
     });
 
+    // Select the top 3 filtered fones
+    _filteredFonesCustoBeneficio = filteredFonesCustoBeneficio.take(3).toList();
+
+    var filteredFonesConsolidados = <List<dynamic>>[];
+    for (var fone in averageCluster) {
+      double price = double.tryParse(fone[2].toString()) ?? 0;
+      String type = fone[1].toString();
+      double micQuality = double.tryParse(fone[8].toString()) ?? 0; // microfone
+      String hasGameMode = fone[9].toString(); // possui_modo_jogo
+      String resistance = fone[10].toString(); // resistencia
+      if (price >= widget.minPrice &&
+          price <= widget.maxPrice &&
+          type == widget.selectedType &&
+          (!widget.isForWork || micQuality > 0) &&
+          (!widget.isForGaming || hasGameMode == 'Sim') &&
+          (!widget.isForPhysicalActivity || resistance != 'N/A')) {
+        filteredFonesConsolidados.add(fone);
+      }
+    }
+
+    // Rank the filtered fones based on their factor scores
+    filteredFonesConsolidados.sort((a, b) {
+      double scoreA =
+          factorScores[averageCluster.indexOf(a)].reduce((a, b) => a + b);
+      double scoreB =
+          factorScores[averageCluster.indexOf(b)].reduce((a, b) => a + b);
+      return scoreB.compareTo(scoreA);
+    });
+
+    // Select the top 3 filtered fones
+    _filteredFonesBoasApostas = filteredFonesConsolidados.take(3).toList();
+
+    var filteredFonesBoasApostas = <List<dynamic>>[];
+    for (var fone in smallestCluster) {
+      double price = double.tryParse(fone[2].toString()) ?? 0;
+      String type = fone[1].toString();
+      double micQuality = double.tryParse(fone[8].toString()) ?? 0; // microfone
+      String hasGameMode = fone[9].toString(); // possui_modo_jogo
+      String resistance = fone[10].toString(); // resistencia
+      if (price >= widget.minPrice &&
+          price <= widget.maxPrice &&
+          type == widget.selectedType &&
+          (!widget.isForWork || micQuality > 0) &&
+          (!widget.isForGaming || hasGameMode == 'Sim') &&
+          (!widget.isForPhysicalActivity || resistance != 'N/A')) {
+        filteredFonesBoasApostas.add(fone);
+      }
+    }
+
+    // Rank the filtered fones based on their factor scores
+    filteredFonesBoasApostas.sort((a, b) {
+      double scoreA =
+          factorScores[smallestCluster.indexOf(a)].reduce((a, b) => a + b);
+      double scoreB =
+          factorScores[smallestCluster.indexOf(b)].reduce((a, b) => a + b);
+      return scoreB.compareTo(scoreA);
+    });
+
+    // Select the top 3 filtered fones
+    _filteredFonesConsolidados = filteredFonesBoasApostas.take(3).toList();
+
     setState(() {
-      _filteredFones = filteredFones.take(5).toList(); // Top 5
       _isLoading = false;
     });
+  }
+
+  // Open URL
+  void _launchURL(String url) async {
+    Uri uri = Uri.parse(url);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri);
+    } else {
+      throw 'Could not launch $url';
+    }
+  }
+
+//Lista os Fones
+  List<Widget> _buildFoneList(List<List<dynamic>> fones) {
+    if (fones.isEmpty) {
+      return [
+        ListTile(
+          title: Text('Nenhum fone encontrado'),
+        ),
+      ];
+    }
+
+    return fones.map((fone) {
+      String nome = fone[0].toString();
+      double preco = double.tryParse(fone[2].toString()) ?? 0;
+      double nota = double.tryParse(fone[3].toString()) ?? 0;
+      String link = fone[11].toString();
+
+      return ListTile(
+        title: Text(nome),
+        subtitle: Text(
+            'Preço: R${preco.toStringAsFixed(2)} | Nota: ${nota.toStringAsFixed(1)}'),
+        trailing: Icon(Icons.open_in_new),
+        onTap: () => _launchURL(link),
+      );
+    }).toList();
   }
 
   @override
@@ -268,53 +375,68 @@ class _ResultPageState extends State<ResultPage> {
       ),
       body: _isLoading
           ? Center(child: CircularProgressIndicator())
-          : _filteredFones.isEmpty
-              ? Center(
-                  child: Text(
-                      'Nenhum fone encontrado com os critérios selecionados.'))
-              : ListView.builder(
-                  itemCount: _filteredFones.length,
-                  itemBuilder: (context, index) {
-                    return ListTile(
-                      title:
-                          Text(_filteredFones[index][0].toString()), // modelo
-                      subtitle: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                              'R\$ ${_filteredFones[index][2].toString()} - Nota: ${_filteredFones[index][3].toString()}'), // preço_medio_reais e nota_global
-                          Row(
-                            children: [
-                              TextButton(
-                                onPressed: () {
-                                  _launchURL(_filteredFones[index][11]
-                                      .toString()); // link_review
-                                },
-                                child: Text('Review'),
-                              ),
-                              TextButton(
-                                onPressed: () {
-                                  _launchURL(_filteredFones[index][12]
-                                      .toString()); // link_amazon
-                                },
-                                child: Text('Comprar'),
-                              ),
-                            ],
-                          ),
-                        ],
+          : SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(height: 20),
+                  Padding(
+                    padding: const EdgeInsets.all(8.0),
+                    child: Text(
+                      'Custo Benefício',
+                      style:
+                          TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  ..._buildFoneList(_filteredFonesCustoBeneficio),
+                  if (_filteredFonesCustoBeneficio.length <
+                      3) // Check if less than 3 fones
+                    ...List.generate(
+                      3 - _filteredFonesCustoBeneficio.length,
+                      (index) => ListTile(
+                        title: Text('...'), // Placeholder
                       ),
-                    );
-                  },
-                ),
+                    ),
+                  SizedBox(height: 20),
+                  Padding(
+                    padding: const EdgeInsets.all(8.0),
+                    child: Text(
+                      'Boas Apostas',
+                      style:
+                          TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  ..._buildFoneList(_filteredFonesBoasApostas),
+                  if (_filteredFonesBoasApostas.length <
+                      3) // Check if less than 3 fones
+                    ...List.generate(
+                      3 - _filteredFonesBoasApostas.length,
+                      (index) => ListTile(
+                        title: Text('...'), // Placeholder
+                      ),
+                    ),
+                  SizedBox(height: 20),
+                  Padding(
+                    padding: const EdgeInsets.all(8.0),
+                    child: Text(
+                      'Consolidados no Mercado',
+                      style:
+                          TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  ..._buildFoneList(_filteredFonesConsolidados),
+                  if (_filteredFonesConsolidados.length <
+                      3) // Check if less than 3 fones
+                    ...List.generate(
+                      3 - _filteredFonesConsolidados.length,
+                      (index) => ListTile(
+                        title: Text('...'), // Placeholder
+                      ),
+                    ),
+                ],
+              ),
+            ),
     );
-  }
-
-  void _launchURL(String url) async {
-    if (await canLaunch(url)) {
-      await launch(url);
-    } else {
-      throw 'Could not launch $url';
-    }
   }
 }
 
