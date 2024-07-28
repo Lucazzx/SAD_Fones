@@ -197,7 +197,7 @@ class _ResultPageState extends State<ResultPage> {
       ];
     }).toList();
 
-    // Perform K-Means clustering
+    //K-Means clustering
     var kmeans = KMeans(numClusters: 3);
     var result = kmeans.fit(dataPoints);
 
@@ -210,7 +210,7 @@ class _ResultPageState extends State<ResultPage> {
       clusteredFones[cluster]!.add(_fones[i + 1]);
     }
 
-    // Identify clusters
+    // Identica clusters
     var largestCluster =
         clusteredFones.values.reduce((a, b) => a.length > b.length ? a : b);
     var smallestCluster =
@@ -221,7 +221,7 @@ class _ResultPageState extends State<ResultPage> {
             cluster.length != smallestCluster.length,
         orElse: () => []);
 
-    // Perform factor analysis using PCA (Principal Component Analysis)
+    // Performa Análise fatorial usando PCA (Principal Component Analysis)
     var pca = PCA(numComponents: 2);
     var pcaResult = pca.fit(largestCluster
         .map((fone) => [
@@ -234,11 +234,11 @@ class _ResultPageState extends State<ResultPage> {
             ])
         .toList());
 
-    // Extract factor loadings and scores
+    // Extrair cargas fatoriais e scores
     var factorLoadings = pcaResult.loadings;
     var factorScores = pcaResult.scores;
 
-    // Filter the fones based on the user's preferences
+    // Filtra os custo beneficios
     var filteredFonesCustoBeneficio = <List<dynamic>>[];
     for (var fone in largestCluster) {
       double price = double.tryParse(fone[2].toString()) ?? 0;
@@ -256,7 +256,7 @@ class _ResultPageState extends State<ResultPage> {
       }
     }
 
-    // Rank the filtered fones based on their factor scores
+    // Rankeia com base no factor score
     filteredFonesCustoBeneficio.sort((a, b) {
       double scoreA =
           factorScores[largestCluster.indexOf(a)].reduce((a, b) => a + b);
@@ -265,9 +265,10 @@ class _ResultPageState extends State<ResultPage> {
       return scoreB.compareTo(scoreA);
     });
 
-    // Select the top 3 filtered fones
+    // Seleciona o top 3 de custo beneficio
     _filteredFonesCustoBeneficio = filteredFonesCustoBeneficio.take(3).toList();
 
+    //filtra os consolidados
     var filteredFonesConsolidados = <List<dynamic>>[];
     for (var fone in averageCluster) {
       double price = double.tryParse(fone[2].toString()) ?? 0;
@@ -285,7 +286,7 @@ class _ResultPageState extends State<ResultPage> {
       }
     }
 
-    // Rank the filtered fones based on their factor scores
+    // Rankeia com base no factor score
     filteredFonesConsolidados.sort((a, b) {
       double scoreA =
           factorScores[averageCluster.indexOf(a)].reduce((a, b) => a + b);
@@ -294,9 +295,10 @@ class _ResultPageState extends State<ResultPage> {
       return scoreB.compareTo(scoreA);
     });
 
-    // Select the top 3 filtered fones
+    // Seleciona o top 3 de consolidados
     _filteredFonesBoasApostas = filteredFonesConsolidados.take(3).toList();
 
+    //filtra as apostas
     var filteredFonesBoasApostas = <List<dynamic>>[];
     for (var fone in smallestCluster) {
       double price = double.tryParse(fone[2].toString()) ?? 0;
@@ -314,7 +316,7 @@ class _ResultPageState extends State<ResultPage> {
       }
     }
 
-    // Rank the filtered fones based on their factor scores
+    // Rankeia com base no factor score
     filteredFonesBoasApostas.sort((a, b) {
       double scoreA =
           factorScores[smallestCluster.indexOf(a)].reduce((a, b) => a + b);
@@ -323,7 +325,7 @@ class _ResultPageState extends State<ResultPage> {
       return scoreB.compareTo(scoreA);
     });
 
-    // Select the top 3 filtered fones
+    // Seleciona o top 3 de apostas
     _filteredFonesConsolidados = filteredFonesBoasApostas.take(3).toList();
 
     setState(() {
@@ -331,7 +333,7 @@ class _ResultPageState extends State<ResultPage> {
     });
   }
 
-  // Open URL
+  // Abrir URL
   void _launchURL(String url) async {
     Uri uri = Uri.parse(url);
     if (await canLaunchUrl(uri)) {
@@ -389,12 +391,11 @@ class _ResultPageState extends State<ResultPage> {
                     ),
                   ),
                   ..._buildFoneList(_filteredFonesCustoBeneficio),
-                  if (_filteredFonesCustoBeneficio.length <
-                      3) // Check if less than 3 fones
+                  if (_filteredFonesCustoBeneficio.length < 3)
                     ...List.generate(
                       3 - _filteredFonesCustoBeneficio.length,
                       (index) => ListTile(
-                        title: Text('...'), // Placeholder
+                        title: Text('...'),
                       ),
                     ),
                   SizedBox(height: 20),
@@ -407,12 +408,11 @@ class _ResultPageState extends State<ResultPage> {
                     ),
                   ),
                   ..._buildFoneList(_filteredFonesBoasApostas),
-                  if (_filteredFonesBoasApostas.length <
-                      3) // Check if less than 3 fones
+                  if (_filteredFonesBoasApostas.length < 3)
                     ...List.generate(
                       3 - _filteredFonesBoasApostas.length,
                       (index) => ListTile(
-                        title: Text('...'), // Placeholder
+                        title: Text('...'),
                       ),
                     ),
                   SizedBox(height: 20),
@@ -425,12 +425,11 @@ class _ResultPageState extends State<ResultPage> {
                     ),
                   ),
                   ..._buildFoneList(_filteredFonesConsolidados),
-                  if (_filteredFonesConsolidados.length <
-                      3) // Check if less than 3 fones
+                  if (_filteredFonesConsolidados.length < 3)
                     ...List.generate(
                       3 - _filteredFonesConsolidados.length,
                       (index) => ListTile(
-                        title: Text('...'), // Placeholder
+                        title: Text('...'),
                       ),
                     ),
                 ],
@@ -537,7 +536,7 @@ class PCA {
   PCA({required this.numComponents});
 
   PCAResult fit(List<List<double>> data) {
-    // Perform PCA on the data
+    // Performa PCA
     var covarianceMatrix = _calculateCovarianceMatrix(data);
     var eigenvalues = _calculateEigenvalues(covarianceMatrix);
     var eigenvectors = _calculateEigenvectors(covarianceMatrix, eigenvalues);
@@ -548,7 +547,7 @@ class PCA {
   }
 
   List<List<double>> _calculateCovarianceMatrix(List<List<double>> data) {
-    // Calculate the mean of each feature
+    // Calcula a significancia de cada variavel
     var means = List.generate(data[0].length, (_) => 0.0);
     for (var row in data) {
       for (int i = 0; i < row.length; i++) {
@@ -559,7 +558,7 @@ class PCA {
       means[i] /= data.length;
     }
 
-    // Calculate the covariance matrix
+    // Calcula a matriz de covariância
     var covarianceMatrix =
         List.generate(data[0].length, (_) => List.filled(data[0].length, 0.0));
     for (var row in data) {
@@ -579,7 +578,7 @@ class PCA {
   }
 
   List<double> _calculateEigenvalues(List<List<double>> covarianceMatrix) {
-    // Calculate the eigenvalues of the covariance matrix
+    // Calcula os autovalores da matriz de covariância
     var eigenvalues = List.generate(covarianceMatrix.length, (_) => 0.0);
     for (int i = 0; i < covarianceMatrix.length; i++) {
       eigenvalues[i] = covarianceMatrix[i][i];
@@ -590,7 +589,7 @@ class PCA {
 
   List<List<double>> _calculateEigenvectors(
       List<List<double>> covarianceMatrix, List<double> eigenvalues) {
-    // Calculate the eigenvectors of the covariance matrix
+    // Calcula os autovetores da matriz de covariância
     var eigenvectors = List.generate(covarianceMatrix.length,
         (_) => List.filled(covarianceMatrix.length, 0.0));
     for (int i = 0; i < covarianceMatrix.length; i++) {
@@ -602,7 +601,7 @@ class PCA {
 
   List<List<double>> _calculateLoadings(
       List<List<double>> eigenvectors, List<double> eigenvalues) {
-    // Calculate the loadings matrix
+    // Calcular a matriz de cargas
     var loadings = List.generate(
         eigenvectors[0].length, (_) => List.filled(eigenvectors.length, 0.0));
     for (int i = 0; i < eigenvectors.length; i++) {
@@ -616,7 +615,7 @@ class PCA {
 
   List<List<double>> _calculateScores(
       List<List<double>> data, List<List<double>> loadings) {
-    // Calculate the scores matrix
+    // Calcula a matriz de scores
     var scores =
         List.generate(data.length, (_) => List.filled(loadings.length, 0.0));
     for (int i = 0; i < data.length; i++) {
